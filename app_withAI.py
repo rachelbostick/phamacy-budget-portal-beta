@@ -6,7 +6,7 @@ from PIL import Image
 
 # 1. Setup AI (We will link the API key in Streamlit settings later)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-3-flash')
 
 st.title("Pediatric Oncology Protocol Budgeter")
 
