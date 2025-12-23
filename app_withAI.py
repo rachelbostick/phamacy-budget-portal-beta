@@ -8,7 +8,7 @@ from PIL import Image
 # 1. Setup AI 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 # Using the standard stable model name
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 st.title("Pediatric Oncology Protocol Budgeter")
 
