@@ -37,6 +37,10 @@ if st.button("Estimate Age Distribution via AI"):
     # Calculate N based on AI Literature percentages
     st.session_state['age_counts'] = {k: int(v * total_enrollment) for k, v in age_dist.items()}
     st.success(f"Literature-based distribution: {st.session_state['age_counts']}")
+    
+    # Calculate N based on AI Literature percentages
+    st.session_state['age_counts'] = {k: int(v * total_enrollment) for k, v in age_dist.items()}
+    st.success(f"Literature-based distribution: {st.session_state['age_counts']}")
 
 # --- INPUT SECTION 2: AI PROTOCOL EXTRACTION ---
 st.header("2. Protocol AI Extraction")
