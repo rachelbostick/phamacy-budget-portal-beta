@@ -5,12 +5,12 @@ import json
 from PIL import Image  
 
 # Print available AI models
-st.sidebar.subheader("Available AI Models")
-try:
-    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    st.sidebar.write(models)
-except Exception as e:
-    st.sidebar.error(f"Could not list models: {e}")
+#st.sidebar.subheader("Available AI Models")
+#try:
+    #models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    #st.sidebar.write(models)
+#except Exception as e:
+    #st.sidebar.error(f"Could not list models: {e}")
     
 
 # 1. Setup AI (We will link the API key in Streamlit settings later)
