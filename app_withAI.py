@@ -6,9 +6,9 @@ import re
 from PIL import Image 
 
 # 1. Setup AI 
-# Make sure your Streamlit Secret is set to GEMINI_API_KEY
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-2.5-flash')
+# Using the standard stable model name
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 st.title("Pediatric Oncology Protocol Budgeter")
 
@@ -46,16 +46,18 @@ if uploaded_file is not None:
 
     with st.spinner(f"Consulting {disease_state} literature and extracting data..."):
         try:
+            # Requesting JSON specifically
             response = model.generate_content([prompt, img])
             raw_text = response.text
 
             # --- ROBUST JSON EXTRACTION ---
-            # This finds the [...] block even if the AI added conversational text
+            # This regex finds the bracketed list [ { ... } ] even if there is text around it
             json_match = re.search(r'\[\s*\{.*\}\s*\]', raw_text, re.DOTALL)
             
             if json_match:
                 clean_json = json_match.group(0)
             else:
+                # Fallback: clean up markdown characters
                 clean_json = raw_text.replace('```json', '').replace('```', '').strip()
             
             raw_data = json.loads(clean_json)
@@ -63,8 +65,9 @@ if uploaded_file is not None:
             
             st.session_state['extracted_df'] = df
 
-            st.subheader("Extracted Protocol Details (with AI Enrollment Estimates)")
+            st.subheader("Extracted Protocol Details (including AI Enrollment Estimates)")
             st.dataframe(df, use_container_width=True)
+            st.info(f"Note: 'Est. Patients (N)' is estimated based on {disease_state} incidence literature.")
 
             # --- INPUT SECTION 2: MANUAL VARIABLES ---
             st.header("2. Manual Cost & Patient Variables")
@@ -78,46 +81,46 @@ if uploaded_file is not None:
 
             # --- CALCULATION ENGINE ---
             def run_calculations(row):
+                # Ensure Calc Factor is clean for the logic
                 factor = str(row['Calc Factor']).lower()
                 
-                # Logic to choose between BSA or Weight
+                # Col N: Calculated Dose
                 if 'm' in factor or 'bsa' in factor:
                     dose = round(row['Dose per Admin'] * bsa, 3)
                 else:
                     dose = round(row['Dose per Admin'] * weight, 3)
                 
+                # Col O: Vials Required
                 vials = int(-(-dose // vial_size)) 
+                # Col P: Cost per Admin
                 cost_admin = vials * cost_vial
                 
-                # Cohort Math: Cost * Doses * Number of Patients in that age group
-                total_pt_cohort = cost_admin * row['Total Doses'] * row['Est. Patients (N)']
+                # UPDATED Col Q: Total Cost per Patient Cohort (using the AI's N estimate)
+                total_pt = cost_admin * row['Total Doses'] * row['Est. Patients (N)']
                 
-                # 10-Year Inflation (4%)
+                # Inflation Math (Col V) - 4% annual inflation over 10 years
                 inflation = 0.04 
-                total_10yr = total_pt_cohort * ((1 + inflation)**10 - 1) / inflation
+                total_10yr = total_pt * ((1 + inflation)**10 - 1) / inflation
                 
-                return pd.Series([dose, vials, cost_admin, total_pt_cohort, total_10yr])
+                return pd.Series([dose, vials, cost_admin, total_pt, total_10yr])
 
-            # Applying math
-            df[['Calc Dose (N)', 'Vials (O)', 'Cost/Admin (P)', 'Cohort Total (Q)', '10yr Adjusted (V)']] = df.apply(run_calculations, axis=1)
+            df[['Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']] = df.apply(run_calculations, axis=1)
 
             # --- OUTPUT SECTION ---
             st.header("3. Results Summary")
-            output_cols = ['Drug Name', 'Age Group', 'Est. Patients (N)', 'Calc Dose (N)', 'Cohort Total (Q)', '10yr Adjusted (V)']
+            output_columns = ['Drug Name', 'Age Group', 'Est. Patients (N)', 'Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']
             
-            st.dataframe(df[output_cols].style.format({
-                'Cohort Total (Q)': '${:,.2f}',
-                '10yr Adjusted (V)': '${:,.2f}'
+            st.dataframe(df[output_columns].style.format({
+                'Cost per Administration (P)': '${:,.2f}',
+                'Total Cost per Patient (Q)': '${:,.2f}',
+                '10 Adjusted Year Total (V)': '${:,.2f}'
             }))
 
-            # Grand Total Calculation
-            grand_total = df['10yr Adjusted (V)'].sum()
-            st.metric("Total 10-Year Protocol Budget", f"${grand_total:,.2f}")
-
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Export Full Budget to CSV", data=csv, file_name="protocol_budget.csv", mime="text/csv")
+            st.download_button("Export Full Budget to Spreadsheet", data=csv, file_name="protocol_budget.csv", mime="text/csv")
 
         except Exception as e:
-            st.error(f"Error: {e}")
-            with st.expander("Show Raw AI Response"):
-                st.text(raw_text if 'raw_text' in locals() else "No response received.")
+            st.error(f"Error processing protocol: {e}")
+            if 'raw_text' in locals():
+                with st.expander("View Raw AI Response"):
+                    st.text(raw_text)
