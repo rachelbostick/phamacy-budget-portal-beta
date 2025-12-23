@@ -11,6 +11,8 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 st.title("Pediatric Oncology Protocol Budgeter")
 
 # --- INPUT SECTION 1: AI EXTRACTION ---
+import json # Ensuring json is available for the parser below
+
 st.header("1. Protocol AI Extraction")
 uploaded_file = st.file_uploader("Upload Protocol Screenshot", type=["png", "jpg", "jpeg"])
 
@@ -21,12 +23,25 @@ if uploaded_file is not None:
     # 2. Display the image in the app so you know it worked
     st.image(img, caption="Protocol Screenshot", width=400)
 
+    # 3. DEFINE THE PROMPT (This fixes the NameError)
+    prompt = """
+    You are a Pharmacy Budget Specialist. Look at the attached protocol table. 
+    Extract every drug row and return a JSON list where each object has these keys exactly:
+    "Risk Group", "Drug Name", "Age Group", "Dose per Admin", "Units", "Calc Factor", "Total Doses".
+    
+    Strict Rules:
+    - 'Dose per Admin' must be a numeric value only.
+    - 'Units' must be 'mg/kg' or 'mg/m2'.
+    - 'Calc Factor' must be 'Weight' or 'BSA'.
+    - 'Total Doses' must be the total count of administrations for the entire trial.
+    """
+
     with st.spinner("AI is reading the protocol..."):
-        # 3. Pass the 'img' object to Gemini instead of 'uploaded_file'
-        response = model.generate_content([prompt, img])
-        
-        # 4. Clean and parse the response
         try:
+            # 4. Pass the 'img' object to Gemini with the newly defined prompt
+            response = model.generate_content([prompt, img])
+            
+            # 5. Clean and parse the response
             clean_json = response.text.replace('```json', '').replace('```', '').strip()
             raw_data = json.loads(clean_json)
             df = pd.DataFrame(raw_data)
@@ -36,9 +51,10 @@ if uploaded_file is not None:
             st.dataframe(df)
             
         except Exception as e:
-            st.error(f"AI extracted the data, but the format was messy: {e}")
-            st.text("Raw AI Output:")
-            st.write(response.text)
+            st.error(f"Error during AI extraction: {e}")
+            if 'response' in locals():
+                st.text("Raw AI Output for debugging:")
+                st.write(response.text)
 
     # --- INPUT SECTION 2: MANUAL VARIABLES ---
     st.header("2. Manual Cost & Patient Variables")
