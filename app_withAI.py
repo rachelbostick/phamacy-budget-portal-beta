@@ -4,6 +4,7 @@ import pandas as pd
 import json
 from PIL import Image  
 
+# Print available AI models
 st.sidebar.subheader("Available AI Models")
 try:
     models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
