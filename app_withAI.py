@@ -4,6 +4,14 @@ import pandas as pd
 import json
 from PIL import Image  
 
+st.sidebar.subheader("Available AI Models")
+try:
+    models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    st.sidebar.write(models)
+except Exception as e:
+    st.sidebar.error(f"Could not list models: {e}")
+    
+
 # 1. Setup AI (We will link the API key in Streamlit settings later)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-3-flash')
