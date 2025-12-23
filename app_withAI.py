@@ -1,20 +1,23 @@
-import streamlit as st
+streamlit as st
 import google.generativeai as genai
 import pandas as pd
 import json
-import re
 from PIL import Image 
 
 # 1. Setup AI 
+# Ensure your Streamlit Secret is set to GEMINI_API_KEY
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-# Using the standard stable model name
 model = genai.GenerativeModel('gemini-2.5-flash')
 
 st.title("Pediatric Oncology Protocol Budgeter")
 
 # --- INPUT SECTION 1: AI EXTRACTION & ENROLLMENT MODELING ---
+import json
+from PIL import Image
+
 st.header("1. Protocol AI Extraction & Enrollment Modeling")
 
+# New User Inputs for Literature-Based Estimation
 col_in1, col_in2 = st.columns(2)
 with col_in1:
     disease_state = st.text_input("Disease of Interest", value="Rhabdomyosarcoma")
@@ -27,6 +30,7 @@ if uploaded_file is not None:
     img = Image.open(uploaded_file)
     st.image(img, caption="Protocol Screenshot", width=400)
 
+    # REFINED PROMPT: Combines Extraction + Literature Estimation
     prompt = f"""
     You are a Pediatric Oncology Research Specialist. Analyze the attached protocol for {disease_state}.
     
@@ -46,29 +50,26 @@ if uploaded_file is not None:
 
     with st.spinner(f"Consulting {disease_state} literature and extracting data..."):
         try:
-            # Requesting JSON specifically
             response = model.generate_content([prompt, img])
-            raw_text = response.text
-
-            # --- ROBUST JSON EXTRACTION ---
-            # This regex finds the bracketed list [ { ... } ] even if there is text around it
-            json_match = re.search(r'\[\s*\{.*\}\s*\]', raw_text, re.DOTALL)
             
-            if json_match:
-                clean_json = json_match.group(0)
-            else:
-                # Fallback: clean up markdown characters
-                clean_json = raw_text.replace('```json', '').replace('```', '').strip()
-            
+            # Clean and parse the response
+            clean_json = response.text.replace('```json', '').replace('```', '').strip()
             raw_data = json.loads(clean_json)
             df = pd.DataFrame(raw_data)
             
+            # Save the patient counts to session state so they can be used in the next section's math
             st.session_state['extracted_df'] = df
 
+            # Show the "Extracted" data with the new N column
             st.subheader("Extracted Protocol Details (including AI Enrollment Estimates)")
             st.dataframe(df, use_container_width=True)
-            st.info(f"Note: 'Est. Patients (N)' is estimated based on {disease_state} incidence literature.")
-
+            st.info(f"Note: 'Est. Patients (N)' is calculated based on {disease_state} incidence literature.")
+            
+        except Exception as e:
+            st.error(f"Error during AI extraction: {e}")
+            if 'response' in locals():
+                st.write("Raw AI Output for debugging:", response.text)
+            
             # --- INPUT SECTION 2: MANUAL VARIABLES ---
             st.header("2. Manual Cost & Patient Variables")
             col1, col2 = st.columns(2)
@@ -79,21 +80,40 @@ if uploaded_file is not None:
                 weight = st.number_input("Avg Patient Weight (kg) (Col L)", value=30.0)
                 bsa = st.number_input("Avg Patient BSA (m2) (Col M)", value=1.0)
 
-            # --- CALCULATION ENGINE ---
+            # --- CALCULATION ENGINE (Columns N-V) ---
             def run_calculations(row):
-                # Ensure Calc Factor is clean for the logic
-                factor = str(row['Calc Factor']).lower()
-                
-                # Col N: Calculated Dose
-                if 'm' in factor or 'bsa' in factor:
-                    dose = round(row['Dose per Admin'] * bsa, 3)
-                else:
-                    dose = round(row['Dose per Admin'] * weight, 3)
-                
-                # Col O: Vials Required
+                # Col N: Calculated Dose (rounded to 3 decimals)
+                dose = round(row['Dose per Admin'] * (weight if row['Calc Factor'] == "Weight" else bsa), 3)
+                # Col O: Vials Required (Ceiling Math)
                 vials = int(-(-dose // vial_size)) 
                 # Col P: Cost per Admin
                 cost_admin = vials * cost_vial
+                # Col Q: Total Cost per Patient
+                total_pt = cost_admin * row['Total Doses']
                 
-                # UPDATED Col Q: Total Cost per Patient Cohort (using the AI's N estimate)
-                total_pt = cost_admin * row['Total Doses'] * row['Est. Patients
+                # Inflation Math (Col T & V) - 4% annual inflation over 10 years
+                inflation = 0.04 
+                total_10yr = total_pt * ((1 + inflation)**10 - 1) / inflation
+                
+                return pd.Series([dose, vials, cost_admin, total_pt, total_10yr])
+
+            # Apply math and create the new columns
+            df[['Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']] = df.apply(run_calculations, axis=1)
+
+            # --- OUTPUT SECTION ---
+            st.header("3. Results Summary")
+            
+            # Displaying the specific columns you requested: N, O, P, Q, and V
+            output_columns = ['Drug Name', 'Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']
+            st.dataframe(df[output_columns].style.format({
+                'Cost per Administration (P)': '${:,.2f}',
+                'Total Cost per Patient (Q)': '${:,.2f}',
+                '10 Adjusted Year Total (V)': '${:,.2f}'
+            }))
+
+            # Export to CSV
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("Export Full Budget to Spreadsheet", data=csv, file_name="protocol_budget.csv", mime="text/csv")
+
+        except Exception as e:
+            st.error(f"Error processing protocol: {e}")
