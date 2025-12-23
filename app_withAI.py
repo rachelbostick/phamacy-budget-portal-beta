@@ -14,7 +14,7 @@ except Exception as e:
 
 # 1. Setup AI (We will link the API key in Streamlit settings later)
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-3-flash')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 st.title("Pediatric Oncology Protocol Budgeter")
 
