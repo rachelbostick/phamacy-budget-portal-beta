@@ -69,17 +69,17 @@ if uploaded_file is not None:
                 return pd.Series([dose, vials, cost_admin, total_pt, total_10yr])
 
             # Apply math and create the new columns
-            df[['Calc Dose (N)', 'Vials (O)', 'Cost/Admin (P)', 'Total/Pt (Q)', '10-Year Total (V)']] = df.apply(run_calculations, axis=1)
+            df[['Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']] = df.apply(run_calculations, axis=1)
 
             # --- OUTPUT SECTION ---
             st.header("3. Results Summary")
             
             # Displaying the specific columns you requested: N, O, P, Q, and V
-            output_columns = ['Drug Name', 'Calc Dose (N)', 'Vials (O)', 'Cost/Admin (P)', 'Total/Pt (Q)', '10-Year Total (V)']
+            output_columns = ['Drug Name', 'Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']
             st.dataframe(df[output_columns].style.format({
-                'Cost/Admin (P)': '${:,.2f}',
-                'Total/Pt (Q)': '${:,.2f}',
-                '10-Year Total (V)': '${:,.2f}'
+                'Cost per Administration (P)': '${:,.2f}',
+                'Total Cost per Patient (Q)': '${:,.2f}',
+                '10 Adjusted Year Total (V)': '${:,.2f}'
             }))
 
             # Export to CSV
