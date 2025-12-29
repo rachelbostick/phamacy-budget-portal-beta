@@ -7,22 +7,26 @@ from PIL import Image
 
 # 1. Setup AI 
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 st.title("Pediatric Oncology Protocol Budgeter")
 
-# --- INPUT SECTION 1 ---
+# --- INPUT SECTION 1: GATED BY FORM ---
 st.header("1. Protocol AI Extraction & Enrollment Modeling")
 
-col_in1, col_in2 = st.columns(2)
-with col_in1:
-    disease_state = st.text_input("Disease of Interest", value="Rhabdomyosarcoma")
-with col_in2:
-    total_n = st.number_input("Expected Total Enrollment", value=135)
+with st.form("ai_extraction_form"):
+    col_in1, col_in2 = st.columns(2)
+    with col_in1:
+        disease_state = st.text_input("Disease of Interest", value="Rhabdomyosarcoma")
+    with col_in2:
+        total_n = st.number_input("Expected Total Enrollment", value=135)
 
-uploaded_file = st.file_uploader("Upload Protocol Screenshot", type=["png", "jpg", "jpeg"])
+    uploaded_file = st.file_uploader("Upload Protocol Screenshot", type=["png", "jpg", "jpeg"])
+    
+    # The form submit button
+    submit_button = st.form_submit_button("Run AI Extraction")
 
-if uploaded_file is not None:
+if uploaded_file is not None and submit_button:
     img = Image.open(uploaded_file)
     st.image(img, caption="Protocol Screenshot", width=400)
 
@@ -57,73 +61,76 @@ if uploaded_file is not None:
             raw_data = json.loads(clean_json)
             df = pd.DataFrame(raw_data)
             
-            # --- NEW: DRUG-SPECIFIC COST INPUTS ---
-            st.header("2. Drug-Specific Cost & Timeline Inputs")
+            # Store in session state so it persists when we edit costs later
+            st.session_state['extracted_df'] = df
             
-            # Create a unique list of drugs for the user to define costs for
-            unique_drugs = df['Drug Name'].unique()
-            cost_ref_df = pd.DataFrame({
-                'Drug Name': unique_drugs,
-                'Cost per Vial ($)': [15.58] * len(unique_drugs),
-                'Vial Size (mg)': [1.0] * len(unique_drugs)
-            })
-            
-            st.subheader("Edit Vial Costs and Sizes")
-            edited_costs = st.data_editor(cost_ref_df, use_container_width=True, hide_index=True)
-            
-            # Timeline Input
-            trial_years = st.number_input("Target Trial Run Time (Years)", value=5, min_value=1)
-
-            # --- CALCULATION ENGINE ---
-            def run_calculations(row):
-                factor = str(row['Calc Factor']).lower()
-                
-                # Fetch specific cost/size for this drug from the editor
-                drug_meta = edited_costs[edited_costs['Drug Name'] == row['Drug Name']].iloc[0]
-                c_vial = drug_meta['Cost per Vial ($)']
-                v_size = drug_meta['Vial Size (mg)']
-                
-                # Metrics logic
-                row_weight = row.get('Est. Weight (kg)', 30.0)
-                row_bsa = row.get('Est. BSA (m2)', 1.0)
-                
-                if 'm' in factor or 'bsa' in factor:
-                    dose = round(float(row['Dose per Admin']) * float(row_bsa), 3)
-                else:
-                    dose = round(float(row['Dose per Admin']) * float(row_weight), 3)
-                
-                vials = int(-(-dose // v_size)) 
-                cost_admin = vials * c_vial
-                total_pt = cost_admin * int(row['Total Doses']) * int(row['Est. Patients (N)'])
-                
-                # Adjusted Totals (Inflation formula: Cost * ((1+i)^n - 1) / i)
-                i = 0.04 
-                total_10yr = total_pt * ((1 + i)**10 - 1) / i
-                total_custom = total_pt * ((1 + i)**trial_years - 1) / i
-                
-                return pd.Series([dose, vials, cost_admin, total_pt, total_10yr, total_custom])
-
-            calc_cols = ['Calculated Dose', 'Vials Required', 'Cost/Admin', 'Cohort Total', '10yr Total', f'{trial_years}yr Adjusted Total']
-            df[calc_cols] = df.apply(run_calculations, axis=1)
-
-            # --- OUTPUT SECTION ---
-            st.header("3. Results Summary")
-            
-            output_columns = [
-                'Drug Name', 'Age Group', 'Est. Patients (N)', 
-                'Calculated Dose', 'Cost/Admin', 'Cohort Total', 
-                '10yr Total', f'{trial_years}yr Adjusted Total'
-            ]
-            
-            st.dataframe(df[output_columns].style.format({
-                'Cost/Admin': '${:,.2f}',
-                'Cohort Total': '${:,.2f}',
-                '10yr Total': '${:,.2f}',
-                f'{trial_years}yr Adjusted Total': '${:,.2f}'
-            }))
-
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Export Results", data=csv, file_name="budget.csv", mime="text/csv")
-
         except Exception as e:
             st.error(f"Error: {e}")
+
+# --- SECTION 2 & 3: RUN ONLY IF WE HAVE DATA ---
+if 'extracted_df' in st.session_state:
+    df = st.session_state['extracted_df']
+    
+    st.subheader("Extracted Protocol Details")
+    st.dataframe(df, use_container_width=True)
+
+    st.header("2. Drug-Specific Cost & Timeline Inputs")
+    
+    unique_drugs = df['Drug Name'].unique()
+    cost_ref_df = pd.DataFrame({
+        'Drug Name': unique_drugs,
+        'Cost per Vial ($)': [15.58] * len(unique_drugs),
+        'Vial Size (mg)': [1.0] * len(unique_drugs)
+    })
+    
+    st.subheader("Edit Vial Costs and Sizes")
+    edited_costs = st.data_editor(cost_ref_df, use_container_width=True, hide_index=True)
+    
+    trial_years = st.number_input("Target Trial Run Time (Years)", value=5, min_value=1)
+
+    # ADDED: Button to trigger calculations so the app doesn't refresh constantly
+    if st.button("Calculate Final Budget"):
+        
+        def run_calculations(row):
+            factor = str(row['Calc Factor']).lower()
+            drug_meta = edited_costs[edited_costs['Drug Name'] == row['Drug Name']].iloc[0]
+            c_vial = drug_meta['Cost per Vial ($)']
+            v_size = drug_meta['Vial Size (mg)']
+            
+            row_weight = row.get('Est. Weight (kg)', 30.0)
+            row_bsa = row.get('Est. BSA (m2)', 1.0)
+            
+            if 'm' in factor or 'bsa' in factor:
+                dose = round(float(row['Dose per Admin']) * float(row_bsa), 3)
+            else:
+                dose = round(float(row['Dose per Admin']) * float(row_weight), 3)
+            
+            vials = int(-(-dose // v_size)) 
+            cost_admin = vials * c_vial
+            total_pt = cost_admin * int(row['Total Doses']) * int(row['Est. Patients (N)'])
+            
+            i = 0.04 
+            total_10yr = total_pt * ((1 + i)**10 - 1) / i
+            total_custom = total_pt * ((1 + i)**trial_years - 1) / i
+            
+            return pd.Series([dose, vials, cost_admin, total_pt, total_10yr, total_custom])
+
+        calc_cols = ['Calculated Dose', 'Vials Required', 'Cost/Admin', 'Cohort Total', '10yr Total', f'{trial_years}yr Adjusted Total']
+        df[calc_cols] = df.apply(run_calculations, axis=1)
+
+        st.header("3. Results Summary")
+        output_columns = [
+            'Drug Name', 'Age Group', 'Est. Patients (N)', 
+            'Calculated Dose', 'Cost/Admin', 'Cohort Total', 
+            '10yr Total', f'{trial_years}yr Adjusted Total'
+        ]
+        
+        st.dataframe(df[output_columns].style.format({
+            'Cost/Admin': '${:,.2f}',
+            'Cohort Total': '${:,.2f}',
+            '10yr Total': '${:,.2f}',
+            f'{trial_years}yr Adjusted Total': '${:,.2f}'
+        }))
+
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Export Results", data=csv, file_name="budget.csv", mime="text/csv")
