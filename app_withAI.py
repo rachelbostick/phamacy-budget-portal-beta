@@ -38,7 +38,7 @@ if uploaded_file is not None:
     "Risk Group", "Drug Name", "Age Group", "Est. Patients (N)", "Est. Height (cm)", "Est. Weight (kg)", "Est. BSA (m2)", "Dose per Admin", "Units", "Calc Factor", "Total Doses"
     """
 
-    with st.spinner(f"Consulting {disease_state} literature..."):
+    with st.spinner(f"AI is consulting {disease_state} literature..."):
         try:
             response = model.generate_content([prompt, img])
             raw_text = response.text
