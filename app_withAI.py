@@ -123,11 +123,22 @@ if uploaded_file is not None:
                 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)'
             ]
 
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Export Full Budget to Spreadsheet", data=csv, file_name="protocol_budget.csv", mime="text/csv")
+           # --- RESULTS SUMMARY ---
+            st.header("3. Results Summary")
+            
+            # Fixed the closing bracket and indentation here
+            output_columns = [
+                'Risk Group', 'Drug Name', 'Age Group', 'Est. Patients (N)', 
+                'Est. Weight (kg)', 'Est. BSA (m2)', 'Calculated Dose', 
+                'Cost/Admin', 'Total Cohort Cost', '10yr Adjusted Total'
+            ]
+            
+            # Ensure the dataframe call is on its own line
+            st.dataframe(df[output_columns].style.format({
+                'Cost/Admin': '${:,.2f}',
+                'Total Cohort Cost': '${:,.2f}',
+                '10yr Adjusted Total': '${:,.2f}'
+            }))
 
-        except Exception as e:
-            st.error(f"Error processing protocol: {e}")
-            if 'raw_text' in locals():
-                with st.expander("View Raw AI Response"):
-                    st.text(raw_text)
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("Export Budget", data=csv, file_name="budget.csv", mime="text/csv")
