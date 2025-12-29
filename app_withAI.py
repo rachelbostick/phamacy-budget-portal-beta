@@ -111,7 +111,16 @@ if uploaded_file is not None:
 
             # --- OUTPUT SECTION ---
             st.header("3. Results Summary")
-            output_columns = ['Drug Name', 'Age Group', 'Est. Patients (N)', 'Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']
+            output_columns = [
+                'Drug Name', 
+                'Age Group', 
+                'Est. Patients (N)', 
+                'Calculated Dose (N)', 
+                'Vials Required (O)', 
+                'Cost per Administration (P)', 
+                'Total Cost per Patient (Q)', 
+                '10 Adjusted Year Total (V)'
+            ]
             
             st.dataframe(df[output_columns].style.format({
                 'Cost per Administration (P)': '${:,.2f}',
