@@ -36,6 +36,14 @@ if uploaded_file is not None:
     
     Return ONLY a JSON list with these keys:
     "Risk Group", "Drug Name", "Age Group", "Est. Patients (N)", "Est. Height (cm)", "Est. Weight (kg)", "Est. BSA (m2)", "Dose per Admin", "Units", "Calc Factor", "Total Doses"
+
+    Rules:
+    - 'Est. Patients (N)' must be a whole number. 
+    - The sum of 'Est. Patients (N)' across unique age groups should equal {total_n}.
+    - 'Dose per Admin' must be numeric.
+    - 'Units' must be 'mg/kg' or 'mg/m2'.
+    - 'Calc Factor' must be 'Weight' or 'BSA'.
+    - 'Total Doses' must be the total count of administrations for the entire trial.
     """
 
     with st.spinner(f"AI is consulting {disease_state} literature..."):
