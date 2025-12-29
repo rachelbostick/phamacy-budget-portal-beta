@@ -121,11 +121,7 @@ if uploaded_file is not None:
                 'Est. Weight (kg)', 'Est. BSA (m2)', 'Calculated Dose (N)', 
                 'Vials Required (O)', 'Cost per Administration (P)', 
                 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)'
-            ]            st.dataframe(df[output_columns].style.format({
-                'Cost per Administration (P)': '${:,.2f}',
-                'Total Cost per Patient (Q)': '${:,.2f}',
-                '10 Adjusted Year Total (V)': '${:,.2f}'
-            }))
+            ]
 
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("Export Full Budget to Spreadsheet", data=csv, file_name="protocol_budget.csv", mime="text/csv")
