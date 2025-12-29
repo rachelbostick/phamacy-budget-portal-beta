@@ -34,11 +34,9 @@ if uploaded_file is not None:
     1. Extract every drug row into a JSON list.
     2. For each age group found in the protocol, estimate the number of patients (N) that will fall into that group 
        out of a total enrollment of {total_n}, based on prior clinical literature and SEER incidence data for {disease_state}.
-    3. For EACH age group, estimate a literature-informed Average Height (cm), Average Weight (kg), and Average BSA (m2) 
-       typical for a pediatric patient in that specific age/disease bracket.
     
     Return ONLY a JSON list with these keys:
-    "Risk Group", "Drug Name", "Age Group", "Est. Patients (N)", "Est. Height (cm)", "Est. Weight (kg)", "Est. BSA (m2)", "Dose per Admin", "Units", "Calc Factor", "Total Doses"
+    "Risk Group", "Drug Name", "Age Group", "Est. Patients (N)", "Dose per Admin", "Units", "Calc Factor", "Total Doses"
     
     Rules:
     - 'Est. Patients (N)' must be a whole number. 
@@ -84,61 +82,48 @@ if uploaded_file is not None:
                 weight = st.number_input("Avg Patient Weight (kg) (Col L)", value=30.0)
                 bsa = st.number_input("Avg Patient BSA (m2) (Col M)", value=1.0)
 
-            # --- UPDATED CALCULATION ENGINE (Prioritizes AI Estimates) ---
+            # --- CALCULATION ENGINE ---
             def run_calculations(row):
+                # Ensure Calc Factor is clean for the logic
                 factor = str(row['Calc Factor']).lower()
-                
-                # Use AI-estimated metrics if available, otherwise fallback to global inputs
-                row_weight = row.get('Est. Weight (kg)', weight)
-                row_bsa = row.get('Est. BSA (m2)', bsa)
                 
                 # Col N: Calculated Dose
                 if 'm' in factor or 'bsa' in factor:
-                    dose = round(row['Dose per Admin'] * row_bsa, 3)
+                    dose = round(row['Dose per Admin'] * bsa, 3)
                 else:
-                    dose = round(row['Dose per Admin'] * row_weight, 3)
+                    dose = round(row['Dose per Admin'] * weight, 3)
                 
                 # Col O: Vials Required
                 vials = int(-(-dose // vial_size)) 
                 # Col P: Cost per Admin
                 cost_admin = vials * cost_vial
                 
-                # Col Q: Total Cost per Patient Cohort
+                # UPDATED Col Q: Total Cost per Patient Cohort (using the AI's N estimate)
                 total_pt = cost_admin * row['Total Doses'] * row['Est. Patients (N)']
                 
-                # Col V: 10 Year Adjusted Total
+                # Inflation Math (Col V) - 4% annual inflation over 10 years
                 inflation = 0.04 
                 total_10yr = total_pt * ((1 + inflation)**10 - 1) / inflation
                 
                 return pd.Series([dose, vials, cost_admin, total_pt, total_10yr])
 
-            # Apply calculations
             df[['Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']] = df.apply(run_calculations, axis=1)
 
-            # --- UPDATED OUTPUT COLUMNS ---
-            output_columns = [
-                'Risk Group', 'Drug Name', 'Age Group', 'Est. Patients (N)', 
-                'Est. Weight (kg)', 'Est. BSA (m2)', 'Calculated Dose (N)', 
-                'Vials Required (O)', 'Cost per Administration (P)', 
-                'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)'
-            ]
-
-           # --- RESULTS SUMMARY ---
+            # --- OUTPUT SECTION ---
             st.header("3. Results Summary")
+            output_columns = ['Drug Name', 'Age Group', 'Est. Patients (N)', 'Calculated Dose (N)', 'Vials Required (O)', 'Cost per Administration (P)', 'Total Cost per Patient (Q)', '10 Adjusted Year Total (V)']
             
-            # Fixed the closing bracket and indentation here
-            output_columns = [
-                'Risk Group', 'Drug Name', 'Age Group', 'Est. Patients (N)', 
-                'Est. Weight (kg)', 'Est. BSA (m2)', 'Calculated Dose', 
-                'Cost/Admin', 'Total Cohort Cost', '10yr Adjusted Total'
-            ]
-            
-            # Ensure the dataframe call is on its own line
             st.dataframe(df[output_columns].style.format({
-                'Cost/Admin': '${:,.2f}',
-                'Total Cohort Cost': '${:,.2f}',
-                '10yr Adjusted Total': '${:,.2f}'
+                'Cost per Administration (P)': '${:,.2f}',
+                'Total Cost per Patient (Q)': '${:,.2f}',
+                '10 Adjusted Year Total (V)': '${:,.2f}'
             }))
 
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("Export Budget", data=csv, file_name="budget.csv", mime="text/csv")
+            st.download_button("Export Full Budget to Spreadsheet", data=csv, file_name="protocol_budget.csv", mime="text/csv")
+
+        except Exception as e:
+            st.error(f"Error processing protocol: {e}")
+            if 'raw_text' in locals():
+                with st.expander("View Raw AI Response"):
+                    st.text(raw_text)
