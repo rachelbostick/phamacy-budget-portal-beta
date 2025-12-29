@@ -36,11 +36,6 @@ if uploaded_file is not None:
     
     Return ONLY a JSON list with these keys:
     "Risk Group", "Drug Name", "Age Group", "Est. Patients (N)", "Est. Height (cm)", "Est. Weight (kg)", "Est. BSA (m2)", "Dose per Admin", "Units", "Calc Factor", "Total Doses"
-    
-    Rules:
-    - 'Est. Patients (N)' must be a whole number. 
-    - 'Dose per Admin' must be numeric.
-    - 'Units' must be 'mg/kg' or 'mg/m2'.
     """
 
     with st.spinner(f"Consulting {disease_state} literature..."):
@@ -53,61 +48,70 @@ if uploaded_file is not None:
             
             raw_data = json.loads(clean_json)
             df = pd.DataFrame(raw_data)
-            st.session_state['extracted_df'] = df
-
-            st.subheader("Extracted Protocol Details")
-            st.dataframe(df, use_container_width=True)
-
-            # --- INPUT SECTION 2: MANUAL VARIABLES ---
-            st.header("2. Manual Cost Variables")
-            col1, col2 = st.columns(2)
-            with col1:
-                cost_vial = st.number_input("Cost per Vial ($)", value=15.58)
-                vial_size = st.number_input("Vial Size (mg)", value=1.0)
-            with col2:
-                # Global fallbacks if AI fails to estimate a specific row
-                global_weight = 30.0
-                global_bsa = 1.0
+            
+            # --- NEW: DRUG-SPECIFIC COST INPUTS ---
+            st.header("2. Drug-Specific Cost & Timeline Inputs")
+            
+            # Create a unique list of drugs for the user to define costs for
+            unique_drugs = df['Drug Name'].unique()
+            cost_ref_df = pd.DataFrame({
+                'Drug Name': unique_drugs,
+                'Cost per Vial ($)': [15.58] * len(unique_drugs),
+                'Vial Size (mg)': [1.0] * len(unique_drugs)
+            })
+            
+            st.subheader("Edit Vial Costs and Sizes")
+            edited_costs = st.data_editor(cost_ref_df, use_container_width=True, hide_index=True)
+            
+            # Timeline Input
+            trial_years = st.number_input("Target Trial Run Time (Years)", value=5, min_value=1)
 
             # --- CALCULATION ENGINE ---
             def run_calculations(row):
                 factor = str(row['Calc Factor']).lower()
                 
-                # Use AI-estimated metrics if available, otherwise global fallback
-                row_weight = row.get('Est. Weight (kg)', global_weight)
-                row_bsa = row.get('Est. BSA (m2)', global_bsa)
+                # Fetch specific cost/size for this drug from the editor
+                drug_meta = edited_costs[edited_costs['Drug Name'] == row['Drug Name']].iloc[0]
+                c_vial = drug_meta['Cost per Vial ($)']
+                v_size = drug_meta['Vial Size (mg)']
+                
+                # Metrics logic
+                row_weight = row.get('Est. Weight (kg)', 30.0)
+                row_bsa = row.get('Est. BSA (m2)', 1.0)
                 
                 if 'm' in factor or 'bsa' in factor:
                     dose = round(float(row['Dose per Admin']) * float(row_bsa), 3)
                 else:
                     dose = round(float(row['Dose per Admin']) * float(row_weight), 3)
                 
-                vials = int(-(-dose // vial_size)) 
-                cost_admin = vials * cost_vial
+                vials = int(-(-dose // v_size)) 
+                cost_admin = vials * c_vial
                 total_pt = cost_admin * int(row['Total Doses']) * int(row['Est. Patients (N)'])
                 
-                inflation = 0.04 
-                total_10yr = total_pt * ((1 + inflation)**10 - 1) / inflation
+                # Adjusted Totals (Inflation formula: Cost * ((1+i)^n - 1) / i)
+                i = 0.04 
+                total_10yr = total_pt * ((1 + i)**10 - 1) / i
+                total_custom = total_pt * ((1 + i)**trial_years - 1) / i
                 
-                return pd.Series([dose, vials, cost_admin, total_pt, total_10yr])
+                return pd.Series([dose, vials, cost_admin, total_pt, total_10yr, total_custom])
 
-            calc_cols = ['Calculated Dose', 'Vials Required', 'Cost/Admin', 'Cohort Total', '10yr Total']
+            calc_cols = ['Calculated Dose', 'Vials Required', 'Cost/Admin', 'Cohort Total', '10yr Total', f'{trial_years}yr Adjusted Total']
             df[calc_cols] = df.apply(run_calculations, axis=1)
 
             # --- OUTPUT SECTION ---
             st.header("3. Results Summary")
             
-            # This is the area where your SyntaxError was occurring
             output_columns = [
                 'Drug Name', 'Age Group', 'Est. Patients (N)', 
-                'Est. Weight (kg)', 'Est. BSA (m2)', 'Calculated Dose', 
-                'Cost/Admin', 'Cohort Total', '10yr Total'
+                'Calculated Dose', 'Cost/Admin', 'Cohort Total', 
+                '10yr Total', f'{trial_years}yr Adjusted Total'
             ]
             
             st.dataframe(df[output_columns].style.format({
                 'Cost/Admin': '${:,.2f}',
                 'Cohort Total': '${:,.2f}',
-                '10yr Total': '${:,.2f}'
+                '10yr Total': '${:,.2f}',
+                f'{trial_years}yr Adjusted Total': '${:,.2f}'
             }))
 
             csv = df.to_csv(index=False).encode('utf-8')
